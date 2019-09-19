@@ -1,5 +1,6 @@
-const mongoose = require('mongoose')
-const Schema = mongoose.Schema
+const mongoose = require('mongoose');
+
+const Schema = mongoose.Schema;
 
 const productSchema = new Schema({
   title: {
@@ -23,9 +24,9 @@ const productSchema = new Schema({
     ref: 'User',
     required: true
   }
-})
+});
 
-module.exports = mongoose.model('Product', productSchema)
+module.exports = mongoose.model('Product', productSchema);
 
 // const mongodb = require('mongodb');
 // const getDb = require('../util/database').getDb;
