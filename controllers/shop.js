@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 
 const pdfkit = require('pdfkit')
+const stripe = require('stripe')('sk_test_UNlYjPsHrLtrv9GlHoFuLsOK000M3JCRpN');
 
 const Product = require('../models/product');
 const Order = require('../models/order');
@@ -233,3 +234,82 @@ exports.getInvoice = (req, res, next) => {
     })
     .catch(err=>next(err))
 }
+
+exports.getCheckout = (req, res, next) => {
+  let products; // THIS WAS MOVED - had to put it here, to make it accessible by all then() blocks.
+  let total = 0; // THIS WAS MOVED - had to put it here, to make it accessible by all then() blocks.
+  req.user
+    .populate('cart.items.productId')
+    .execPopulate()
+    .then(user => {
+      products = user.cart.items;
+      products.forEach(p => {
+        total += p.quantity * p.productId.price;
+      });
+      return stripe.checkout.sessions.create({ // THIS WAS ADDED - configures a Stripe session
+        payment_method_types: ['card'],
+        line_items: products.map(p => {
+          return {
+            name: p.productId.title,
+            description: p.productId.description,
+            amount: p.productId.price * 100,
+            currency: 'usd',
+            quantity: p.quantity
+          };
+        }),
+        success_url: 'http://localhost:3000/checkout/success', // THIS WAS ADDED
+        cancel_url: 'http://localhost:3000/checkout/cancel' // THIS WAS ADDED
+      });
+    })
+    .then(session => {
+      console.log(session);
+      res.render('shop/checkout', {
+        path: '/checkout',
+        pageTitle: 'Checkout',
+        products: products,
+        totalSum: total,
+        sessionId: session.id // THIS WAS ADDED - we need that in the checkout.ejs file (see above)
+      });
+    })
+    .catch(err => {
+      const error = new Error(err);
+      error.httpStatusCode = 500;
+      return next(error);
+    });
+};
+
+exports.getCheckoutSuccess = (req, res, next) => {
+  let totalSum = 0;
+  req.user
+    .populate('cart.items.productId')
+    .execPopulate()
+    .then(user => {
+      user.cart.items.forEach(p => {
+        totalSum += p.quantity * p.productId.price;
+      });
+ 
+      const products = user.cart.items.map(i => {
+        return { quantity: i.quantity, product: { ...i.productId._doc } };
+      });
+      const order = new Order({
+        user: {
+          email: req.user.email,
+          userId: req.user
+        },
+        products: products
+      });
+      return order.save();
+    })
+    .then(() => {
+      return req.user.clearCart();
+    })
+    .then(() => {
+      res.redirect('/orders');
+    })
+    .catch(err => {
+      const error = new Error(err);
+      console.log(err);
+      error.httpStatusCode = 500;
+      return next(error);
+    });
+};
